@@ -325,15 +325,10 @@ Add to your MCP client config (e.g., `~/Library/Application Support/Claude/claud
 
 ### Option 2: Docker Container
 
-First, build the Docker image:
+Configure your MCP client to use the Docker Hub image (no build required):
 
-```bash
-docker build -t cute-pandas-mcp-server .
-```
+**For all Docker runtimes (Docker Desktop, Colima, Lima, Podman, Rancher Desktop):**
 
-Then configure your MCP client:
-
-**For Docker Desktop (Linux/Windows):**
 ```json
 {
   "mcpServers": {
@@ -342,43 +337,54 @@ Then configure your MCP client:
       "args": [
         "run", "-i", "--rm",
         "-v", "/var/run/docker.sock:/var/run/docker.sock",
-        "-v", "/Users/user/:/Users/user/:ro",
-        "cute-pandas-mcp-server"
+        "-v", "/Users/yourname:/Users/yourname:ro",
+        "sagacient/cute-pandas-mcp-server"
       ]
     }
   }
 }
 ```
 
-**For Colima (macOS):**
-```json
-{
-  "mcpServers": {
-    "cute-pandas": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-v", "/Users/user/.colima/default/docker.sock:/var/run/docker.sock",
-        "-v", "/Users/user/:/Users/user/:ro",
-        "cute-pandas-mcp-server"
-      ]
-    }
-  }
-}
+> **Important:** 
+> - Replace `/Users/yourname` with your actual home directory path (e.g., `/Users/john` on macOS, `/home/john` on Linux)
+> - MCP clients do **not** expand `$HOME` or `~` in JSON configs - use absolute paths
+> - The Docker socket mount `/var/run/docker.sock:/var/run/docker.sock` works for all runtimes because it references the socket **inside the VM**, not the host path
+
+**Build locally (optional):**
+
+If you prefer to build from source:
+
+```bash
+docker build -t cute-pandas-mcp-server .
 ```
 
-> **Note:** Replace `/Users/user/` with your actual home directory path if your MCP client doesn't expand environment variables (e.g., `/Users/yourname` on macOS, `/home/yourname` on Linux).
+Then use `cute-pandas-mcp-server` instead of `sagacient/cute-pandas-mcp-server` in your config.
 
 **Required mounts:**
+
 | Mount | Purpose |
 |-------|---------|
-| Docker socket | Allows server to create pandas execution containers |
-| `/Users/user/:/Users/user/:ro` | Makes your files accessible to pandas scripts (read-only) |
+| `/var/run/docker.sock` | Allows server to create pandas execution containers |
+| `/Users/yourname:/Users/yourname:ro` | Makes your files accessible to pandas scripts (read-only) |
 
 **Flags explained:**
+
 - `-i` = Interactive mode (required for stdio transport)
 - `--rm` = Remove container when done
 - `:ro` = Read-only mount for security
+
+**Troubleshooting Docker socket issues:**
+
+If you get "Cannot connect to Docker daemon" errors:
+
+```bash
+# Verify your runtime is running
+colima status      # for Colima
+docker ps          # should work if Docker is running
+
+# Test socket access
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps
+```
 
 ## Example Usage
 
