@@ -358,7 +358,7 @@ Then configure your MCP client:
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
-        "-v", "/Users/user//.colima/default/docker.sock:/var/run/docker.sock",
+        "-v", "/Users/user/.colima/default/docker.sock:/var/run/docker.sock",
         "-v", "/Users/user/:/Users/user/:ro",
         "cute-pandas-mcp-server"
       ]
