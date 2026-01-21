@@ -54,7 +54,7 @@ func DefaultConfig() *Config {
 		ExecutionTimeout: 60 * time.Second,
 		MaxMemoryMB:      512,
 		MaxCPU:           1.0,
-		DockerImage:      "cutepandas/cutepandas:latest", // Docker Hub image for instant startup
+		DockerImage:      "sagacient/cutepandas:latest", // Docker Hub image for instant startup
 		BuildLocal:       false,                          // Set to true to build from CutePandas.Dockerfile
 		NetworkDisabled:  true,
 		Transport:        "stdio",

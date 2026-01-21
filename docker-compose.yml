@@ -19,7 +19,7 @@ services:
     environment:
       - MAX_WORKERS=5
       - EXECUTION_TIMEOUT=60s
-      - DOCKER_IMAGE=cutepandas/cutepandas:latest
+      - DOCKER_IMAGE=sagacient/cutepandas:latest
       - TRANSPORT=stdio
       # Storage settings for HTTP mode
       - STORAGE_DIR=/storage
@@ -49,7 +49,7 @@ services:
     environment:
       - MAX_WORKERS=5
       - EXECUTION_TIMEOUT=60s
-      - DOCKER_IMAGE=cutepandas/cutepandas:latest
+      - DOCKER_IMAGE=sagacient/cutepandas:latest
       - TRANSPORT=http
       - HTTP_PORT=8080
       - STORAGE_DIR=/storage

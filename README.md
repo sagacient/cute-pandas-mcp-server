@@ -79,7 +79,7 @@ Configure via environment variables:
 | `EXECUTION_TIMEOUT` | 60s | Max script execution time |
 | `MAX_MEMORY_MB` | 512 | Memory limit per container in MB |
 | `MAX_CPU` | 1.0 | CPU limit per container |
-| `DOCKER_IMAGE` | cutepandas/cutepandas:latest | Docker image to use |
+| `DOCKER_IMAGE` | sagacient/cutepandas:latest | Docker image to use |
 | `BUILD_LOCAL` | false | Set to `true` to build from `CutePandas.Dockerfile` instead of pulling |
 | `NETWORK_DISABLED` | true | Disable network in containers |
 | `TRANSPORT` | stdio | Transport type: stdio or http |

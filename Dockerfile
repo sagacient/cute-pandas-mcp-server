@@ -63,7 +63,7 @@ RUN mkdir -p /storage && chmod 755 /storage
 # Environment variables (can be overridden)
 ENV MAX_WORKERS=5 \
     EXECUTION_TIMEOUT=60s \
-    DOCKER_IMAGE=cutepandas/cutepandas:latest \
+    DOCKER_IMAGE=sagacient/cutepandas:latest \
     TRANSPORT=stdio \
     STORAGE_DIR=/storage \
     UPLOAD_TTL=1h \
