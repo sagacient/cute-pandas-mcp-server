@@ -342,7 +342,7 @@ Then configure your MCP client:
       "args": [
         "run", "-i", "--rm",
         "-v", "/var/run/docker.sock:/var/run/docker.sock",
-        "-v", "$HOME:$HOME:ro",
+        "-v", "/Users/user/:/Users/user/:ro",
         "cute-pandas-mcp-server"
       ]
     }
@@ -358,8 +358,8 @@ Then configure your MCP client:
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
-        "-v", "$HOME/.colima/default/docker.sock:/var/run/docker.sock",
-        "-v", "$HOME:$HOME:ro",
+        "-v", "/Users/user//.colima/default/docker.sock:/var/run/docker.sock",
+        "-v", "/Users/user/:/Users/user/:ro",
         "cute-pandas-mcp-server"
       ]
     }
@@ -367,13 +367,13 @@ Then configure your MCP client:
 }
 ```
 
-> **Note:** Replace `$HOME` with your actual home directory path if your MCP client doesn't expand environment variables (e.g., `/Users/yourname` on macOS, `/home/yourname` on Linux).
+> **Note:** Replace `/Users/user/` with your actual home directory path if your MCP client doesn't expand environment variables (e.g., `/Users/yourname` on macOS, `/home/yourname` on Linux).
 
 **Required mounts:**
 | Mount | Purpose |
 |-------|---------|
 | Docker socket | Allows server to create pandas execution containers |
-| `$HOME:$HOME:ro` | Makes your files accessible to pandas scripts (read-only) |
+| `/Users/user/:/Users/user/:ro` | Makes your files accessible to pandas scripts (read-only) |
 
 **Flags explained:**
 - `-i` = Interactive mode (required for stdio transport)
