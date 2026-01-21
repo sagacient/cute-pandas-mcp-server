@@ -89,6 +89,7 @@ Configure via environment variables:
 | `MAX_UPLOAD_SIZE` | `104857600` (100MB) | Maximum upload file size in bytes |
 | `SCAN_UPLOADS` | `true` | Enable ClamAV malware scanning for uploaded files |
 | `SCAN_ON_FAIL` | `reject` | Behavior when scanner unavailable: `reject` or `allow` |
+| `TEMP_DIR` | `/tmp/cute-pandas` (Docker) or `~/.cache/cute-pandas/tmp` (native) | Temp directory for script execution (must be shared mount for Docker-in-Docker) |
 
 ## MCP Tools
 
@@ -337,6 +338,7 @@ Configure your MCP client to use the Docker Hub image (no build required):
       "args": [
         "run", "-i", "--rm",
         "-v", "/var/run/docker.sock:/var/run/docker.sock",
+        "-v", "/tmp/cute-pandas:/tmp/cute-pandas",
         "-v", "/Users/yourname:/Users/yourname:ro",
         "sagacient/cute-pandas-mcp-server"
       ]
@@ -348,6 +350,7 @@ Configure your MCP client to use the Docker Hub image (no build required):
 > **Important:** 
 > - Replace `/Users/yourname` with your actual home directory path (e.g., `/Users/john` on macOS, `/home/john` on Linux)
 > - MCP clients do **not** expand `$HOME` or `~` in JSON configs - use absolute paths
+> - The `/tmp/cute-pandas` mount is required for Docker-in-Docker script execution
 > - The Docker socket mount `/var/run/docker.sock:/var/run/docker.sock` works for all runtimes because it references the socket **inside the VM**, not the host path
 
 **Build locally (optional):**
@@ -365,6 +368,7 @@ Then use `cute-pandas-mcp-server` instead of `sagacient/cute-pandas-mcp-server` 
 | Mount | Purpose |
 |-------|---------|
 | `/var/run/docker.sock` | Allows server to create pandas execution containers |
+| `/tmp/cute-pandas:/tmp/cute-pandas` | Shared temp directory for script execution (Docker-in-Docker) |
 | `/Users/yourname:/Users/yourname:ro` | Makes your files accessible to pandas scripts (read-only) |
 
 **Flags explained:**

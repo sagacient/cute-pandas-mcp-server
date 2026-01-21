@@ -493,6 +493,12 @@ func mapToJSON(m map[string]interface{}) string {
 				switch itemVal := item.(type) {
 				case string:
 					result += fmt.Sprintf("%q", itemVal)
+				case bool:
+					if itemVal {
+						result += "True"
+					} else {
+						result += "False"
+					}
 				default:
 					result += fmt.Sprintf("%v", itemVal)
 				}

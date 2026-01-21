@@ -79,7 +79,8 @@ type DockerExecutor struct {
 	cpuLimit         float64
 	networkDisabled  bool
 	executionTimeout time.Duration
-	buildLocal       bool // Force local build instead of pulling
+	buildLocal       bool   // Force local build instead of pulling
+	tempDir          string // Temp directory for scripts (must be accessible to Docker daemon)
 
 	// Image readiness tracking
 	imageReady    bool
@@ -174,7 +175,7 @@ func findDockerSocket() (*client.Client, string, error) {
 }
 
 // NewDockerExecutor creates a new Docker executor.
-func NewDockerExecutor(imageName string, memoryMB int64, cpuLimit float64, networkDisabled bool, timeout time.Duration, buildLocal bool) (*DockerExecutor, error) {
+func NewDockerExecutor(imageName string, memoryMB int64, cpuLimit float64, networkDisabled bool, timeout time.Duration, buildLocal bool, tempDir string) (*DockerExecutor, error) {
 	cli, socketPath, err := findDockerSocket()
 	if err != nil {
 		return nil, fmt.Errorf("failed to find Docker: %w\n\nMake sure Docker, Colima, Lima, Podman, or Rancher Desktop is running.\nYou can also set DOCKER_HOST environment variable manually.", err)
@@ -190,6 +191,7 @@ func NewDockerExecutor(imageName string, memoryMB int64, cpuLimit float64, netwo
 		networkDisabled:  networkDisabled,
 		executionTimeout: timeout,
 		buildLocal:       buildLocal,
+		tempDir:          tempDir,
 	}, nil
 }
 
@@ -443,9 +445,19 @@ func (e *DockerExecutor) buildImage(ctx context.Context) error {
 }
 
 // createAccessibleTempDir creates a temporary directory that is accessible to Docker VMs.
-// On macOS with Colima/Lima/Docker Desktop, /var/folders is not mounted into the VM,
+// If tempDir is set (via TEMP_DIR env), uses that directory.
+// Otherwise, on macOS with Colima/Lima/Docker Desktop, /var/folders is not mounted into the VM,
 // but /Users is. So we create temp dirs under ~/.cache/cute-pandas/ instead.
-func createAccessibleTempDir() (string, error) {
+func (e *DockerExecutor) createAccessibleTempDir() (string, error) {
+	// If tempDir is configured, use it (must be a shared mount for Docker-in-Docker)
+	if e.tempDir != "" {
+		if err := os.MkdirAll(e.tempDir, 0755); err != nil {
+			return "", fmt.Errorf("failed to create temp dir %s: %w", e.tempDir, err)
+		}
+		return os.MkdirTemp(e.tempDir, "exec-*")
+	}
+
+	// Default: use user's cache directory
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		// Fallback to system temp if we can't get home dir
@@ -529,7 +541,8 @@ func (e *DockerExecutor) ExecuteScript(ctx context.Context, script string, files
 
 	// Create temp directory for script and output
 	// Use a directory under user's home to ensure it's accessible to Docker VMs (Colima/Lima/etc)
-	tempDir, err := createAccessibleTempDir()
+	// Or use TEMP_DIR if set (required for Docker-in-Docker setups)
+	tempDir, err := e.createAccessibleTempDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}

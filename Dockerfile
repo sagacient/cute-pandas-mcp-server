@@ -60,6 +60,9 @@ RUN chmod +x entrypoint.sh
 # Create storage directory for HTTP mode file uploads
 RUN mkdir -p /storage && chmod 755 /storage
 
+# Create temp directory for script execution (shared with host via mount)
+RUN mkdir -p /tmp/cute-pandas && chmod 755 /tmp/cute-pandas
+
 # Environment variables (can be overridden)
 ENV MAX_WORKERS=5 \
     EXECUTION_TIMEOUT=60s \
@@ -69,7 +72,8 @@ ENV MAX_WORKERS=5 \
     UPLOAD_TTL=1h \
     MAX_UPLOAD_SIZE=104857600 \
     SCAN_UPLOADS=true \
-    SCAN_ON_FAIL=reject
+    SCAN_ON_FAIL=reject \
+    TEMP_DIR=/tmp/cute-pandas
 
 # Expose HTTP port (only used when TRANSPORT=http)
 EXPOSE 8080

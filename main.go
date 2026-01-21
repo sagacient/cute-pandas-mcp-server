@@ -53,6 +53,7 @@ func main() {
 		cfg.NetworkDisabled,
 		cfg.ExecutionTimeout,
 		cfg.BuildLocal,
+		cfg.TempDir,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create Docker executor: %v", err)

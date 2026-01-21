@@ -41,6 +41,9 @@ type Config struct {
 	// Malware scanning settings
 	ScanUploads bool   // Enable ClamAV malware scanning for uploads
 	ScanOnFail  string // Behavior when scanner unavailable: "reject" or "allow"
+
+	// Temp directory for script execution (must be accessible to Docker daemon)
+	TempDir string
 }
 
 // DefaultConfig returns the default configuration.
@@ -64,7 +67,24 @@ func DefaultConfig() *Config {
 		MaxUploadSize:    100 * 1024 * 1024,         // 100MB
 		ScanUploads:      true,                      // Enable malware scanning by default
 		ScanOnFail:       "reject",                  // Reject uploads if scanner unavailable
+		TempDir:          defaultTempDir(),          // Temp dir accessible to Docker daemon
 	}
+}
+
+// defaultTempDir returns the default temp directory for script execution.
+// Uses TEMP_DIR env if set, /tmp/cute-pandas if it exists (Docker with mount),
+// otherwise falls back to ~/.cache/cute-pandas/tmp.
+func defaultTempDir() string {
+	// Check env first
+	if dir := os.Getenv("TEMP_DIR"); dir != "" {
+		return dir
+	}
+	// Check if /tmp/cute-pandas exists (indicates Docker with mount)
+	if _, err := os.Stat("/tmp/cute-pandas"); err == nil {
+		return "/tmp/cute-pandas"
+	}
+	// Default to user cache directory
+	return ""
 }
 
 // defaultStorageDir returns the default storage directory.
