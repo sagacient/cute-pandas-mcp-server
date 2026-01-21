@@ -13,7 +13,7 @@ An MCP (Model Context Protocol) server that provides isolated pandas/Python exec
 
 ## Prerequisites
 
-- Go 1.23+
+- Go 1.24+
 - A container runtime (any of the following):
   - Docker Desktop
   - Colima
