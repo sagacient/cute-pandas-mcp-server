@@ -10,16 +10,17 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# All logging goes to stderr to avoid corrupting STDIO JSON communication
 log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+    echo -e "${GREEN}[INFO]${NC} $1" >&2
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+    echo -e "${YELLOW}[WARN]${NC} $1" >&2
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
 # Start ClamAV if scanning is enabled
@@ -29,7 +30,7 @@ if [ "${SCAN_UPLOADS}" = "true" ] || [ "${SCAN_UPLOADS}" = "1" ]; then
     # Update virus definitions (non-blocking, run in background)
     log_info "Updating ClamAV virus definitions..."
     freshclam --stdout 2>&1 | while read line; do
-        echo "[freshclam] $line"
+        echo "[freshclam] $line" >&2
     done &
     FRESHCLAM_PID=$!
     
@@ -42,8 +43,8 @@ if [ "${SCAN_UPLOADS}" = "true" ] || [ "${SCAN_UPLOADS}" = "1" ]; then
     # Ensure proper permissions
     chown -R clamav:clamav /var/lib/clamav /var/run/clamav 2>/dev/null || true
     
-    # Start clamd in background
-    clamd &
+    # Start clamd in background (redirect output to stderr)
+    clamd 2>&1 >&2 &
     CLAMD_PID=$!
     
     # Wait for clamd to be ready (up to 60 seconds)
