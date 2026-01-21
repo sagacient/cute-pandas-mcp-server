@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  cute-pandas-server:
+    build: .
+    container_name: cute-pandas-mcp-server
+    volumes:
+      # Mount Docker socket for container management
+      # For standard Docker:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # For Colima on macOS, uncomment and adjust:
+      # - ~/.colima/default/docker.sock:/var/run/docker.sock
+      
+      # Mount data directories you want the pandas scripts to access
+      # - /path/to/your/data:/data:ro
+      
+      # Persistent storage for HTTP mode file uploads
+      - cute-pandas-storage:/storage
+    environment:
+      - MAX_WORKERS=5
+      - EXECUTION_TIMEOUT=60s
+      - DOCKER_IMAGE=cutepandas/cutepandas:latest
+      - TRANSPORT=stdio
+      # Storage settings for HTTP mode
+      - STORAGE_DIR=/storage
+      - UPLOAD_TTL=1h
+      - MAX_UPLOAD_SIZE=104857600
+      # Malware scanning settings
+      - SCAN_UPLOADS=true
+      - SCAN_ON_FAIL=reject
+    # For HTTP mode, uncomment:
+    # ports:
+    #   - "8080:8080"
+    # And change TRANSPORT:
+    # environment:
+    #   - TRANSPORT=http
+    stdin_open: true
+    tty: true
+
+  # HTTP mode configuration (alternative)
+  cute-pandas-http:
+    build: .
+    container_name: cute-pandas-mcp-http
+    profiles:
+      - http  # Only starts with: docker compose --profile http up
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - cute-pandas-storage:/storage
+    environment:
+      - MAX_WORKERS=5
+      - EXECUTION_TIMEOUT=60s
+      - DOCKER_IMAGE=cutepandas/cutepandas:latest
+      - TRANSPORT=http
+      - HTTP_PORT=8080
+      - STORAGE_DIR=/storage
+      - UPLOAD_TTL=1h
+      - MAX_UPLOAD_SIZE=104857600
+      # Malware scanning settings
+      - SCAN_UPLOADS=true
+      - SCAN_ON_FAIL=reject
+    ports:
+      - "8080:8080"
+
+volumes:
+  cute-pandas-storage:
+    driver: local
