@@ -61,11 +61,14 @@ func getDockerfileContent() ([]byte, error) {
 
 // ExecutionResult holds the result of a script execution.
 type ExecutionResult struct {
-	Stdout   string
-	Stderr   string
-	ExitCode int
-	Duration time.Duration
-	Error    string
+	ExecutionID string        // Unique ID for this execution
+	Stdout      string
+	Stderr      string
+	ExitCode    int
+	Duration    time.Duration
+	Error       string
+	OutputFiles []string      // List of files saved to output dir
+	OutputPath  string        // Path to execution output directory
 }
 
 // ErrImageNotReady is returned when the Docker image is still being built.
@@ -81,6 +84,9 @@ type DockerExecutor struct {
 	executionTimeout time.Duration
 	buildLocal       bool   // Force local build instead of pulling
 	tempDir          string // Temp directory for scripts (must be accessible to Docker daemon)
+	outputDir        string // Output directory for pandas script outputs (writable)
+	outputTTL        time.Duration // TTL for output cleanup
+	outputManager    *OutputManager
 
 	// Image readiness tracking
 	imageReady    bool
@@ -175,13 +181,19 @@ func findDockerSocket() (*client.Client, string, error) {
 }
 
 // NewDockerExecutor creates a new Docker executor.
-func NewDockerExecutor(imageName string, memoryMB int64, cpuLimit float64, networkDisabled bool, timeout time.Duration, buildLocal bool, tempDir string) (*DockerExecutor, error) {
+func NewDockerExecutor(imageName string, memoryMB int64, cpuLimit float64, networkDisabled bool, timeout time.Duration, buildLocal bool, tempDir string, outputDir string, outputTTL time.Duration) (*DockerExecutor, error) {
 	cli, socketPath, err := findDockerSocket()
 	if err != nil {
 		return nil, fmt.Errorf("failed to find Docker: %w\n\nMake sure Docker, Colima, Lima, Podman, or Rancher Desktop is running.\nYou can also set DOCKER_HOST environment variable manually.", err)
 	}
 
 	log.Printf("Connected to Docker via: %s", socketPath)
+
+	// Create output manager if outputDir is configured
+	var outputManager *OutputManager
+	if outputDir != "" {
+		outputManager = NewOutputManager(outputDir, outputTTL)
+	}
 
 	return &DockerExecutor{
 		client:           cli,
@@ -192,12 +204,30 @@ func NewDockerExecutor(imageName string, memoryMB int64, cpuLimit float64, netwo
 		executionTimeout: timeout,
 		buildLocal:       buildLocal,
 		tempDir:          tempDir,
+		outputDir:        outputDir,
+		outputTTL:        outputTTL,
+		outputManager:    outputManager,
 	}, nil
 }
 
 // Close closes the Docker client connection.
 func (e *DockerExecutor) Close() error {
+	if e.outputManager != nil {
+		e.outputManager.Stop()
+	}
 	return e.client.Close()
+}
+
+// GetOutputManager returns the output manager for this executor.
+func (e *DockerExecutor) GetOutputManager() *OutputManager {
+	return e.outputManager
+}
+
+// StartOutputCleanup starts the output cleanup loop.
+func (e *DockerExecutor) StartOutputCleanup(interval time.Duration) {
+	if e.outputManager != nil {
+		e.outputManager.StartCleanupLoop(interval)
+	}
 }
 
 // EnsureImageAsync starts pulling or building the Docker image in the background if it doesn't exist.
@@ -554,10 +584,32 @@ func (e *DockerExecutor) ExecuteScript(ctx context.Context, script string, files
 		return nil, fmt.Errorf("failed to write script file: %w", err)
 	}
 
-	// Create output directory
-	outputDir := filepath.Join(tempDir, "output")
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
+	// Generate execution ID for this run
+	execID := GenerateExecutionID()
+
+	// Determine output directory:
+	// - If OutputManager is configured, create execution-specific directory
+	// - Otherwise, use a temp directory inside tempDir (ephemeral)
+	var outputDir string
+	var execOutputPath string
+	if e.outputManager != nil {
+		var err error
+		outputDir, err = e.outputManager.CreateExecutionDir(execID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create execution output directory: %w", err)
+		}
+		execOutputPath = outputDir
+	} else if e.outputDir != "" {
+		// Legacy mode: use shared output directory (no isolation)
+		outputDir = e.outputDir
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
+		}
+	} else {
+		outputDir = filepath.Join(tempDir, "output")
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create output directory: %w", err)
+		}
 	}
 
 	// Build mounts
@@ -674,10 +726,20 @@ func (e *DockerExecutor) ExecuteScript(ctx context.Context, script string, files
 	}
 
 	result := &ExecutionResult{
-		Stdout:   stdout.String(),
-		Stderr:   stderr.String(),
-		ExitCode: int(exitCode),
-		Duration: time.Since(startTime),
+		ExecutionID: execID,
+		Stdout:      stdout.String(),
+		Stderr:      stderr.String(),
+		ExitCode:    int(exitCode),
+		Duration:    time.Since(startTime),
+		OutputPath:  execOutputPath,
+	}
+
+	// Scan output files if using execution-specific directory
+	if e.outputManager != nil && execOutputPath != "" {
+		files, err := e.outputManager.ScanOutputFiles(execOutputPath)
+		if err == nil {
+			result.OutputFiles = files
+		}
 	}
 
 	if exitCode != 0 {

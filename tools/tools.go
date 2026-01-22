@@ -425,3 +425,165 @@ func getBaseName(path string) string {
 	}
 	return path
 }
+
+// ListOutputsTool returns the list_outputs tool definition.
+func ListOutputsTool() mcp.Tool {
+	return mcp.NewTool("list_outputs",
+		mcp.WithDescription("List all execution outputs or files in a specific execution. Returns execution IDs with their output files."),
+		mcp.WithString("exec_id",
+			mcp.Description("Optional execution ID to list files for. If omitted, lists all executions."),
+		),
+	)
+}
+
+// ListOutputsHandler handles the list_outputs tool.
+func (t *PandasTools) ListOutputsHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	outputManager := t.executor.GetOutputManager()
+	if outputManager == nil {
+		return mcp.NewToolResultError("Output management not configured. Set OUTPUT_DIR to enable output persistence."), nil
+	}
+
+	execID, _ := request.GetArguments()["exec_id"].(string)
+
+	if execID != "" {
+		// List files for specific execution
+		files, err := outputManager.ListFiles(execID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to list files: %v", err)), nil
+		}
+
+		output := fmt.Sprintf("Files in execution %s:\n", execID)
+		if len(files) == 0 {
+			output += "  (no files)\n"
+		} else {
+			for _, f := range files {
+				output += fmt.Sprintf("  - %s\n", f)
+			}
+		}
+		return mcp.NewToolResultText(output), nil
+	}
+
+	// List all executions
+	executions, err := outputManager.ListExecutions()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to list executions: %v", err)), nil
+	}
+
+	if len(executions) == 0 {
+		return mcp.NewToolResultText("No executions found."), nil
+	}
+
+	output := fmt.Sprintf("Found %d execution(s):\n\n", len(executions))
+	for _, exec := range executions {
+		output += fmt.Sprintf("Execution: %s\n", exec.ExecutionID)
+		output += fmt.Sprintf("  Created: %s\n", exec.CreatedAt.Format(time.RFC3339))
+		output += fmt.Sprintf("  Expires: %s\n", exec.ExpiresAt.Format(time.RFC3339))
+		output += fmt.Sprintf("  Path: %s\n", exec.OutputPath)
+		if len(exec.Files) == 0 {
+			output += "  Files: (none)\n"
+		} else {
+			output += fmt.Sprintf("  Files: %d\n", len(exec.Files))
+			for _, f := range exec.Files {
+				output += fmt.Sprintf("    - %s\n", f)
+			}
+		}
+		output += "\n"
+	}
+
+	return mcp.NewToolResultText(output), nil
+}
+
+// GetOutputTool returns the get_output tool definition.
+func GetOutputTool() mcp.Tool {
+	return mcp.NewTool("get_output",
+		mcp.WithDescription("Get the contents of an output file from an execution."),
+		mcp.WithString("exec_id",
+			mcp.Required(),
+			mcp.Description("The execution ID containing the file."),
+		),
+		mcp.WithString("filename",
+			mcp.Required(),
+			mcp.Description("The name of the file to retrieve."),
+		),
+	)
+}
+
+// GetOutputHandler handles the get_output tool.
+func (t *PandasTools) GetOutputHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	outputManager := t.executor.GetOutputManager()
+	if outputManager == nil {
+		return mcp.NewToolResultError("Output management not configured. Set OUTPUT_DIR to enable output persistence."), nil
+	}
+
+	execID, err := request.RequireString("exec_id")
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid parameter 'exec_id': %v", err)), nil
+	}
+
+	filename, err := request.RequireString("filename")
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid parameter 'filename': %v", err)), nil
+	}
+
+	data, err := outputManager.GetFile(execID, filename)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to get file: %v", err)), nil
+	}
+
+	// Return as text if it's text-like, otherwise indicate binary
+	if isTextFile(filename) {
+		return mcp.NewToolResultText(string(data)), nil
+	}
+
+	// For binary files, return base64 encoded or just metadata
+	return mcp.NewToolResultText(fmt.Sprintf("Binary file: %s (%d bytes)\nExecution: %s\nFilename: %s", 
+		filename, len(data), execID, filename)), nil
+}
+
+// DeleteOutputsTool returns the delete_outputs tool definition.
+func DeleteOutputsTool() mcp.Tool {
+	return mcp.NewTool("delete_outputs",
+		mcp.WithDescription("Delete output files from an execution or all executions."),
+		mcp.WithString("exec_id",
+			mcp.Description("Optional execution ID to delete. If omitted, deletes ALL executions (use with caution)."),
+		),
+	)
+}
+
+// DeleteOutputsHandler handles the delete_outputs tool.
+func (t *PandasTools) DeleteOutputsHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	outputManager := t.executor.GetOutputManager()
+	if outputManager == nil {
+		return mcp.NewToolResultError("Output management not configured. Set OUTPUT_DIR to enable output persistence."), nil
+	}
+
+	execID, _ := request.GetArguments()["exec_id"].(string)
+
+	if execID != "" {
+		// Delete specific execution
+		if err := outputManager.DeleteExecution(execID); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to delete execution: %v", err)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Successfully deleted execution %s", execID)), nil
+	}
+
+	// Delete all executions
+	count, err := outputManager.DeleteAllExecutions()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to delete executions: %v", err)), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Successfully deleted %d execution(s)", count)), nil
+}
+
+// isTextFile returns true if the file extension suggests a text file.
+func isTextFile(filename string) bool {
+	textExtensions := []string{".txt", ".csv", ".json", ".xml", ".html", ".md", ".py", ".log", ".yaml", ".yml"}
+	lower := strings.ToLower(filename)
+	for _, ext := range textExtensions {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}

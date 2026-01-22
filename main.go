@@ -54,6 +54,8 @@ func main() {
 		cfg.ExecutionTimeout,
 		cfg.BuildLocal,
 		cfg.TempDir,
+		cfg.OutputDir,
+		cfg.OutputTTL,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create Docker executor: %v", err)
@@ -170,6 +172,11 @@ func createMCPServer(cfg *config.Config, pool *workerpool.Pool, exec *executor.D
 	mcpServer.AddTool(tools.ReadDataFrameTool(), pandasTools.ReadDataFrameHandler)
 	mcpServer.AddTool(tools.AnalyzeDataTool(), pandasTools.AnalyzeDataHandler)
 	mcpServer.AddTool(tools.TransformDataTool(), pandasTools.TransformDataHandler)
+
+	// Output management tools
+	mcpServer.AddTool(tools.ListOutputsTool(), pandasTools.ListOutputsHandler)
+	mcpServer.AddTool(tools.GetOutputTool(), pandasTools.GetOutputHandler)
+	mcpServer.AddTool(tools.DeleteOutputsTool(), pandasTools.DeleteOutputsHandler)
 
 	// Add a status tool for checking server health
 	mcpServer.AddTool(

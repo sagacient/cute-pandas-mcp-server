@@ -73,7 +73,8 @@ ENV MAX_WORKERS=5 \
     MAX_UPLOAD_SIZE=104857600 \
     SCAN_UPLOADS=true \
     SCAN_ON_FAIL=reject \
-    TEMP_DIR=/tmp/cute-pandas
+    TEMP_DIR=/tmp/cute-pandas \
+    OUTPUT_DIR=""
 
 # Expose HTTP port (only used when TRANSPORT=http)
 EXPOSE 8080

@@ -44,6 +44,12 @@ type Config struct {
 
 	// Temp directory for script execution (must be accessible to Docker daemon)
 	TempDir string
+
+	// Output directory for pandas script outputs (writable by pandas containers)
+	OutputDir string
+
+	// Output TTL for automatic cleanup of execution outputs
+	OutputTTL time.Duration
 }
 
 // DefaultConfig returns the default configuration.
@@ -68,7 +74,18 @@ func DefaultConfig() *Config {
 		ScanUploads:      true,                      // Enable malware scanning by default
 		ScanOnFail:       "reject",                  // Reject uploads if scanner unavailable
 		TempDir:          defaultTempDir(),          // Temp dir accessible to Docker daemon
+		OutputDir:        defaultOutputDir(),        // Output dir for pandas scripts
+		OutputTTL:        24 * time.Hour,            // Auto-delete outputs after 24 hours
 	}
+}
+
+// defaultOutputDir returns the default output directory for pandas script outputs.
+// Uses OUTPUT_DIR env if set, otherwise empty (no output dir configured).
+func defaultOutputDir() string {
+	if dir := os.Getenv("OUTPUT_DIR"); dir != "" {
+		return dir
+	}
+	return ""
 }
 
 // defaultTempDir returns the default temp directory for script execution.
@@ -184,6 +201,12 @@ func LoadFromEnv() *Config {
 	if v := os.Getenv("SCAN_ON_FAIL"); v != "" {
 		if v == "allow" || v == "reject" {
 			cfg.ScanOnFail = v
+		}
+	}
+
+	if v := os.Getenv("OUTPUT_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.OutputTTL = d
 		}
 	}
 

@@ -90,6 +90,7 @@ Configure via environment variables:
 | `SCAN_UPLOADS` | `true` | Enable ClamAV malware scanning for uploaded files |
 | `SCAN_ON_FAIL` | `reject` | Behavior when scanner unavailable: `reject` or `allow` |
 | `TEMP_DIR` | `/tmp/cute-pandas` (Docker) or `~/.cache/cute-pandas/tmp` (native) | Temp directory for script execution (must be shared mount for Docker-in-Docker) |
+| `OUTPUT_DIR` | (empty) | Writable output directory for pandas scripts. If set, `save_output()` writes here persistently. |
 
 ## MCP Tools
 
@@ -107,8 +108,10 @@ Execute arbitrary pandas/Python code with access to specified files.
 
 **Helper functions available in scripts:**
 - `resolve_path(original_path)` - Convert original file path to container path
-- `save_output(df, filename, format='csv')` - Save DataFrame to output directory
+- `save_output(df, filename, format='csv')` - Save DataFrame to `/output` directory (persists if `OUTPUT_DIR` is configured)
 - `FILE_MAPPING` - Dictionary of original paths to container paths
+
+> **Note:** When `OUTPUT_DIR` is configured (e.g., `-e OUTPUT_DIR=/output` with a mount), files saved via `save_output()` persist on the host. Without it, outputs are ephemeral and lost after execution.
 
 ### `read_dataframe`
 
@@ -339,6 +342,8 @@ Configure your MCP client to use the Docker Hub image (no build required):
         "run", "-i", "--rm",
         "-v", "/var/run/docker.sock:/var/run/docker.sock",
         "-v", "/tmp/cute-pandas:/tmp/cute-pandas",
+        "-v", "/Users/yourname/pandas-output:/output",
+        "-e", "OUTPUT_DIR=/output",
         "-v", "/Users/yourname:/Users/yourname:ro",
         "sagacient/cute-pandas-mcp-server"
       ]
@@ -351,6 +356,7 @@ Configure your MCP client to use the Docker Hub image (no build required):
 > - Replace `/Users/yourname` with your actual home directory path (e.g., `/Users/john` on macOS, `/home/john` on Linux)
 > - MCP clients do **not** expand `$HOME` or `~` in JSON configs - use absolute paths
 > - The `/tmp/cute-pandas` mount is required for Docker-in-Docker script execution
+> - The `/output` mount enables persistent file outputs from pandas scripts (via `save_output()`)
 > - The Docker socket mount `/var/run/docker.sock:/var/run/docker.sock` works for all runtimes because it references the socket **inside the VM**, not the host path
 
 **Build locally (optional):**
@@ -369,6 +375,7 @@ Then use `cute-pandas-mcp-server` instead of `sagacient/cute-pandas-mcp-server` 
 |-------|---------|
 | `/var/run/docker.sock` | Allows server to create pandas execution containers |
 | `/tmp/cute-pandas:/tmp/cute-pandas` | Shared temp directory for script execution (Docker-in-Docker) |
+| `/Users/yourname/pandas-output:/output` | Writable output directory for `save_output()` (optional but recommended) |
 | `/Users/yourname:/Users/yourname:ro` | Makes your files accessible to pandas scripts (read-only) |
 
 **Flags explained:**
