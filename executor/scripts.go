@@ -55,15 +55,68 @@ FILE_MAPPING = {
 # Output directory for saving results
 OUTPUT_DIR = '/output'
 
-def save_output(df, filename, format='csv'):
-    """Save DataFrame to output directory."""
+def save_output(obj, filename, format=None):
+    """
+    Save various types of objects to output directory.
+    
+    Supports:
+    - pandas DataFrame (csv, json, parquet, excel, xlsx)
+    - matplotlib figure (png, jpg, svg, pdf)
+    - dict/list (json)
+    - str (txt)
+    - bytes (binary)
+    
+    Args:
+        obj: Object to save (DataFrame, figure, dict, list, str, bytes)
+        filename: Output filename (format auto-detected from extension)
+        format: Optional format override (csv, json, png, etc.)
+    
+    Returns:
+        str: Path to saved file
+    """
+    import os
     path = os.path.join(OUTPUT_DIR, filename)
-    if format == 'csv':
-        df.to_csv(path, index=False)
-    elif format == 'json':
-        df.to_json(path, orient='records', indent=2)
-    elif format == 'parquet':
-        df.to_parquet(path, index=False)
+    
+    # Auto-detect format from filename if not specified
+    if format is None:
+        format = os.path.splitext(filename)[1].lstrip('.').lower()
+    
+    # Handle pandas DataFrame
+    if hasattr(obj, 'to_csv'):  # Duck typing for DataFrame
+        if format in ['csv', 'txt']:
+            obj.to_csv(path, index=False)
+        elif format == 'json':
+            obj.to_json(path, orient='records', indent=2)
+        elif format in ['parquet', 'pq']:
+            obj.to_parquet(path, index=False)
+        elif format in ['xlsx', 'excel', 'xls']:
+            obj.to_excel(path, index=False, engine='openpyxl')
+        else:
+            obj.to_csv(path, index=False)  # Default to CSV
+    
+    # Handle matplotlib figure
+    elif hasattr(obj, 'savefig'):  # matplotlib figure
+        obj.savefig(path, dpi=300, bbox_inches='tight')
+    
+    # Handle dict/list -> JSON
+    elif isinstance(obj, (dict, list)):
+        import json
+        with open(path, 'w') as f:
+            json.dump(obj, f, indent=2, default=str)
+    
+    # Handle string -> text file
+    elif isinstance(obj, str):
+        with open(path, 'w') as f:
+            f.write(obj)
+    
+    # Handle bytes -> binary file
+    elif isinstance(obj, bytes):
+        with open(path, 'wb') as f:
+            f.write(obj)
+    
+    else:
+        raise TypeError(f"Unsupported type for save_output: {type(obj)}. Supported: DataFrame, Figure, dict, list, str, bytes")
+    
     print(f"Saved output to: {path}")
     return path
 

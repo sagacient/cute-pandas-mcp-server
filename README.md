@@ -109,8 +109,35 @@ Execute arbitrary pandas/Python code with access to specified files.
 
 **Helper functions available in scripts:**
 - `resolve_path(original_path)` - Convert original file path to container path
-- `save_output(df, filename, format='csv')` - Save DataFrame to execution's `/output` directory
+- `save_output(obj, filename, format=None)` - Save various objects to execution's `/output` directory
+  - Supports: pandas DataFrame (csv/json/parquet/xlsx), matplotlib figures (png/pdf/svg), dicts/lists (json), strings (txt), bytes (binary)
+  - Format auto-detected from filename extension if not specified
 - `FILE_MAPPING` - Dictionary of original paths to container paths
+
+**Example usage:**
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Save DataFrame in various formats
+df = pd.DataFrame({'col1': [1, 2, 3], 'col2': [4, 5, 6]})
+save_output(df, 'data.csv')      # CSV format
+save_output(df, 'data.json')     # JSON format
+save_output(df, 'data.xlsx')     # Excel format
+
+# Save matplotlib charts
+fig, ax = plt.subplots()
+ax.bar(['A', 'B', 'C'], [10, 20, 15])
+save_output(fig, 'chart.png')    # PNG image
+save_output(plt.gcf(), 'chart.pdf')  # PDF (current figure)
+
+# Save dictionaries/lists as JSON
+stats = {'mean': 42.5, 'median': 40.0, 'std': 5.2}
+save_output(stats, 'statistics.json')
+
+# Save text reports
+save_output("Analysis complete", 'report.txt')
+```
 
 **Response includes:**
 ```json
