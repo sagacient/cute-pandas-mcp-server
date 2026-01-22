@@ -90,7 +90,8 @@ Configure via environment variables:
 | `SCAN_UPLOADS` | `true` | Enable ClamAV malware scanning for uploaded files |
 | `SCAN_ON_FAIL` | `reject` | Behavior when scanner unavailable: `reject` or `allow` |
 | `TEMP_DIR` | `/tmp/cute-pandas` (Docker) or `~/.cache/cute-pandas/tmp` (native) | Temp directory for script execution (must be shared mount for Docker-in-Docker) |
-| `OUTPUT_DIR` | (empty) | Writable output directory for pandas scripts. If set, `save_output()` writes here persistently. |
+| `OUTPUT_DIR` | (empty) | Base directory for execution outputs. Each execution gets an isolated subdirectory (`exec-xxx`). |
+| `OUTPUT_TTL` | `24h` | Auto-delete execution outputs after this duration (e.g., `12h`, `48h`) |
 
 ## MCP Tools
 
@@ -108,10 +109,23 @@ Execute arbitrary pandas/Python code with access to specified files.
 
 **Helper functions available in scripts:**
 - `resolve_path(original_path)` - Convert original file path to container path
-- `save_output(df, filename, format='csv')` - Save DataFrame to `/output` directory (persists if `OUTPUT_DIR` is configured)
+- `save_output(df, filename, format='csv')` - Save DataFrame to execution's `/output` directory
 - `FILE_MAPPING` - Dictionary of original paths to container paths
 
-> **Note:** When `OUTPUT_DIR` is configured (e.g., `-e OUTPUT_DIR=/output` with a mount), files saved via `save_output()` persist on the host. Without it, outputs are ephemeral and lost after execution.
+**Response includes:**
+```json
+{
+  "execution_id": "exec-abc123",
+  "stdout": "...",
+  "stderr": "...",
+  "exit_code": 0,
+  "duration": "1.2s",
+  "output_files": ["result.csv", "plot.png"],
+  "output_path": "/tmp/pandas-output/exec-abc123"
+}
+```
+
+> **Note:** Each execution gets an isolated output directory (`exec-xxx`). Files saved via `save_output()` are stored there and can be retrieved using `get_output` or `list_outputs` tools. Outputs are automatically cleaned up after `OUTPUT_TTL` (default 24h).
 
 ### `read_dataframe`
 
@@ -182,6 +196,71 @@ Get server health and worker pool statistics.
 
 ```json
 {}
+```
+
+### `list_outputs`
+
+List all active execution output directories or files within a specific execution.
+
+```json
+{
+  "exec_id": "exec-abc123"  // Optional: omit to list all executions
+}
+```
+
+**Response (all executions):**
+```json
+{
+  "executions": [
+    {
+      "execution_id": "exec-abc123",
+      "created_at": "2026-01-22T10:30:00Z",
+      "expires_at": "2026-01-23T10:30:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+**Response (specific execution files):**
+```json
+{
+  "exec_id": "exec-abc123",
+  "files": ["output.csv", "plot.png"],
+  "count": 2
+}
+```
+
+### `get_output`
+
+Retrieve the content of a specific output file from an execution.
+
+```json
+{
+  "exec_id": "exec-abc123",
+  "filename": "output.csv",
+  "base64_encode": false  // Optional: default true for binary files
+}
+```
+
+**Response:**
+```json
+{
+  "exec_id": "exec-abc123",
+  "filename": "output.csv",
+  "content_type": "text/csv",
+  "content": "col1,col2\n1,2\n3,4"
+}
+```
+
+### `delete_outputs`
+
+Delete output files for a specific execution or all executions.
+
+```json
+{
+  "exec_id": "exec-abc123"  // Optional: omit to delete all outputs
+}
 ```
 
 ## HTTP Mode File Upload (HTTP Transport Only)

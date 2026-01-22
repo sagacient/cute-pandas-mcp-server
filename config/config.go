@@ -210,5 +210,13 @@ func LoadFromEnv() *Config {
 		}
 	}
 
+	if v := os.Getenv("TEMP_DIR"); v != "" {
+		cfg.TempDir = v
+	}
+
+	if v := os.Getenv("OUTPUT_DIR"); v != "" {
+		cfg.OutputDir = v
+	}
+
 	return cfg
 }
