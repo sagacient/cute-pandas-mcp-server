@@ -110,8 +110,9 @@ Execute arbitrary pandas/Python code with access to specified files.
 **Helper functions available in scripts:**
 - `resolve_path(original_path)` - Convert original file path to container path
 - `save_output(obj, filename, format=None)` - Save various objects to execution's `/output` directory
-  - Supports: pandas DataFrame (csv/json/parquet/xlsx), matplotlib figures (png/pdf/svg), dicts/lists (json), strings (txt), bytes (binary)
+  - Supports: pandas DataFrame (csv/json/parquet/xlsx), matplotlib figures or `plt` module (png/pdf/svg/jpg), dicts/lists (json), strings (txt), bytes (binary)
   - Format auto-detected from filename extension if not specified
+  - Can accept either `fig` object or `plt` module directly (uses current figure)
 - `FILE_MAPPING` - Dictionary of original paths to container paths
 
 **Example usage:**
@@ -128,8 +129,9 @@ save_output(df, 'data.xlsx')     # Excel format
 # Save matplotlib charts
 fig, ax = plt.subplots()
 ax.bar(['A', 'B', 'C'], [10, 20, 15])
-save_output(fig, 'chart.png')    # PNG image
-save_output(plt.gcf(), 'chart.pdf')  # PDF (current figure)
+save_output(fig, 'chart.png')    # PNG image (using fig object)
+save_output(plt, 'chart.pdf')    # PDF (using plt module - saves current figure)
+save_output(plt.gcf(), 'chart.svg')  # SVG (explicit current figure)
 
 # Save dictionaries/lists as JSON
 stats = {'mean': 42.5, 'median': 40.0, 'std': 5.2}

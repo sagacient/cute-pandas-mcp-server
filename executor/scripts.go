@@ -61,18 +61,29 @@ def save_output(obj, filename, format=None):
     
     Supports:
     - pandas DataFrame (csv, json, parquet, excel, xlsx)
-    - matplotlib figure (png, jpg, svg, pdf)
+    - matplotlib figure or plt module (png, jpg, svg, pdf)
     - dict/list (json)
     - str (txt)
     - bytes (binary)
     
     Args:
-        obj: Object to save (DataFrame, figure, dict, list, str, bytes)
+        obj: Object to save. Can be:
+             - DataFrame: pandas DataFrame
+             - Figure: matplotlib figure (fig) or pyplot module (plt)
+             - dict/list: Python dict or list (saved as JSON)
+             - str: Text string (saved as text file)
+             - bytes: Binary data
         filename: Output filename (format auto-detected from extension)
         format: Optional format override (csv, json, png, etc.)
     
     Returns:
         str: Path to saved file
+    
+    Examples:
+        save_output(df, 'data.csv')              # DataFrame to CSV
+        save_output(fig, 'plot.png')             # Figure to PNG
+        save_output(plt, 'current_plot.png')     # Current pyplot figure
+        save_output({'key': 'val'}, 'data.json') # Dict to JSON
     """
     import os
     path = os.path.join(OUTPUT_DIR, filename)
@@ -94,9 +105,17 @@ def save_output(obj, filename, format=None):
         else:
             obj.to_csv(path, index=False)  # Default to CSV
     
-    # Handle matplotlib figure
+    # Handle matplotlib figure or pyplot module
     elif hasattr(obj, 'savefig'):  # matplotlib figure
         obj.savefig(path, dpi=300, bbox_inches='tight')
+    
+    # Handle pyplot module - get current figure
+    elif hasattr(obj, 'gcf'):  # matplotlib.pyplot module
+        fig = obj.gcf()
+        if fig.get_axes():  # Check if figure has content
+            fig.savefig(path, dpi=300, bbox_inches='tight')
+        else:
+            raise ValueError("No active matplotlib figure to save. Use plt.figure() or pass fig object instead of plt module.")
     
     # Handle dict/list -> JSON
     elif isinstance(obj, (dict, list)):

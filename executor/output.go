@@ -70,8 +70,13 @@ func (m *OutputManager) CreateExecutionDir(execID string) (string, error) {
 	defer m.mu.Unlock()
 
 	execDir := filepath.Join(m.baseDir, execID)
-	if err := os.MkdirAll(execDir, 0755); err != nil {
+	if err := os.MkdirAll(execDir, 0777); err != nil {
 		return "", fmt.Errorf("failed to create execution directory: %w", err)
+	}
+	
+	// Ensure directory is writable by all users (for Docker containers running as different UIDs)
+	if err := os.Chmod(execDir, 0777); err != nil {
+		return "", fmt.Errorf("failed to set directory permissions: %w", err)
 	}
 
 	// Write metadata file
