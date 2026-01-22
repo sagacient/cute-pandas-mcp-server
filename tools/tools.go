@@ -8,14 +8,15 @@ package tools
 
 import (
 	"context"
-	"github.com/sagacient/cute-pandas-mcp-server/executor"
-	"github.com/sagacient/cute-pandas-mcp-server/storage"
-	"github.com/sagacient/cute-pandas-mcp-server/workerpool"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/sagacient/cute-pandas-mcp-server/executor"
+	"github.com/sagacient/cute-pandas-mcp-server/storage"
+	"github.com/sagacient/cute-pandas-mcp-server/workerpool"
 )
 
 // PandasTools holds the tools and their dependencies.
@@ -365,6 +366,20 @@ func formatExecutionResult(result *executor.ExecutionResult) string {
 	}
 
 	output += fmt.Sprintf("\n\n[Execution completed in %v with exit code %d]", result.Duration.Round(time.Millisecond), result.ExitCode)
+
+	// Append execution metadata as parseable JSON for downstream clients
+	// This enables secure file serving and proper URL generation
+	if result.ExecutionID != "" {
+		metadata := map[string]interface{}{
+			"execution_id": result.ExecutionID,
+			"output_files": result.OutputFiles,
+			"output_path":  result.OutputPath,
+		}
+		metadataJSON, err := json.Marshal(metadata)
+		if err == nil {
+			output += "\n\n[EXECUTION_METADATA]" + string(metadataJSON) + "[/EXECUTION_METADATA]"
+		}
+	}
 
 	return output
 }
