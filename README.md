@@ -229,35 +229,19 @@ Get server health and worker pool statistics.
 
 ### `list_outputs`
 
-List all active execution output directories or files within a specific execution.
+List files within a specific execution's output directory.
 
 ```json
 {
-  "exec_id": "exec-abc123"  // Optional: omit to list all executions
+  "exec_id": "exec-abc123"  // Required: execution ID from run_pandas_script response
 }
 ```
 
-**Response (all executions):**
-```json
-{
-  "executions": [
-    {
-      "execution_id": "exec-abc123",
-      "created_at": "2026-01-22T10:30:00Z",
-      "expires_at": "2026-01-23T10:30:00Z"
-    }
-  ],
-  "count": 1
-}
-```
-
-**Response (specific execution files):**
-```json
-{
-  "exec_id": "exec-abc123",
-  "files": ["output.csv", "plot.png"],
-  "count": 2
-}
+**Response:**
+```text
+Files in execution exec-abc123:
+  - output.csv
+  - plot.png
 ```
 
 ### `get_output`
@@ -284,13 +268,20 @@ Retrieve the content of a specific output file from an execution.
 
 ### `delete_outputs`
 
-Delete output files for a specific execution or all executions.
+Delete output files for a specific execution.
 
 ```json
 {
-  "exec_id": "exec-abc123"  // Optional: omit to delete all outputs
+  "exec_id": "exec-abc123"  // Required: execution ID to delete
 }
 ```
+
+**Response:**
+```text
+Successfully deleted execution exec-abc123
+```
+
+> **Security Note:** Users can only access executions if they know the specific `exec_id` (returned by `run_pandas_script`). The 8-character UUID format prevents enumeration attacks.
 
 ## HTTP Mode File Upload (HTTP Transport Only)
 
