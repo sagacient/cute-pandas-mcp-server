@@ -68,10 +68,10 @@ func (t *PandasTools) resolveFilePaths(paths []string) ([]string, error) {
 // RunScriptTool returns the run_pandas_script tool definition.
 func RunScriptTool() mcp.Tool {
 	return mcp.NewTool("run_pandas_script",
-		mcp.WithDescription("Execute a pandas/Python script with access to specified files. The script has access to pandas, numpy, and common data science libraries."),
+		mcp.WithDescription("Execute Python scripts for data analysis, transformation, and visualization. Generate charts, process datasets, and save outputs in multiple formats."),
 		mcp.WithString("script",
 			mcp.Required(),
-			mcp.Description("Python code to execute. Use resolve_path(original_path) to get container paths for mounted files. Use save_output(df, filename) to save results."),
+			mcp.Description("Python code to execute. Helper functions: resolve_path(path) to access mounted files, save_output(obj, filename) to save outputs including data tables (csv/json/xlsx), charts/visualizations (png/pdf/svg), or text/JSON data. Format is auto-detected from filename extension."),
 		),
 		mcp.WithArray("files",
 			mcp.Required(),
@@ -136,7 +136,7 @@ func (t *PandasTools) RunScriptHandler(ctx context.Context, request mcp.CallTool
 // ReadDataFrameTool returns the read_dataframe tool definition.
 func ReadDataFrameTool() mcp.Tool {
 	return mcp.NewTool("read_dataframe",
-		mcp.WithDescription("Read a file into a pandas DataFrame and return summary information including shape, columns, dtypes, memory usage, and a preview."),
+		mcp.WithDescription("Read a data file and return summary information including shape, columns, data types, memory usage, and a preview of the data."),
 		mcp.WithString("file_path",
 			mcp.Required(),
 			mcp.Description("Path to the data file (CSV, Excel, JSON, or Parquet)"),
@@ -266,7 +266,7 @@ func (t *PandasTools) AnalyzeDataHandler(ctx context.Context, request mcp.CallTo
 // TransformDataTool returns the transform_data tool definition.
 func TransformDataTool() mcp.Tool {
 	return mcp.NewTool("transform_data",
-		mcp.WithDescription("Apply pandas transformations to a dataset and return the result. Supports filter, select, drop, sort, rename, dropna, fillna, and more."),
+		mcp.WithDescription("Apply transformations to a dataset and return the result. Supports filter, select, drop, sort, rename, dropna, fillna, and more operations."),
 		mcp.WithString("input_file",
 			mcp.Required(),
 			mcp.Description("Path to the input data file"),
