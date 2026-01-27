@@ -62,6 +62,7 @@ def save_output(obj, filename, format=None):
     Supports:
     - pandas DataFrame (csv, json, parquet, excel, xlsx)
     - matplotlib figure or plt module (png, jpg, svg, pdf)
+    - BytesIO/file-like objects (pdf, images, any binary)
     - dict/list (json)
     - str (txt)
     - bytes (binary)
@@ -70,6 +71,7 @@ def save_output(obj, filename, format=None):
         obj: Object to save. Can be:
              - DataFrame: pandas DataFrame
              - Figure: matplotlib figure (fig) or pyplot module (plt)
+             - BytesIO/file-like: In-memory file objects (for reportlab, PIL, etc.)
              - dict/list: Python dict or list (saved as JSON)
              - str: Text string (saved as text file)
              - bytes: Binary data
@@ -84,6 +86,15 @@ def save_output(obj, filename, format=None):
         save_output(fig, 'plot.png')             # Figure to PNG
         save_output(plt, 'current_plot.png')     # Current pyplot figure
         save_output({'key': 'val'}, 'data.json') # Dict to JSON
+        
+        # For PDFs with reportlab
+        from io import BytesIO
+        from reportlab.pdfgen import canvas
+        buf = BytesIO()
+        c = canvas.Canvas(buf)
+        c.drawString(100, 750, 'Hello World')
+        c.save()
+        save_output(buf, 'report.pdf')          # BytesIO to PDF
     """
     import os
     path = os.path.join(OUTPUT_DIR, filename)
@@ -133,10 +144,62 @@ def save_output(obj, filename, format=None):
         with open(path, 'wb') as f:
             f.write(obj)
     
+    # Handle BytesIO and file-like objects (for reportlab, PIL, etc.)
+    elif hasattr(obj, 'read'):  # File-like object (BytesIO, StringIO, etc.)
+        import io
+        
+        # Seek to beginning if possible
+        if hasattr(obj, 'seek'):
+            obj.seek(0)
+        
+        # Read content
+        content = obj.read()
+        
+        # Determine binary vs text mode based on content type
+        if isinstance(content, bytes):
+            with open(path, 'wb') as f:
+                f.write(content)
+        else:
+            with open(path, 'w') as f:
+                f.write(content)
+    
     else:
-        raise TypeError(f"Unsupported type for save_output: {type(obj)}. Supported: DataFrame, Figure, dict, list, str, bytes")
+        raise TypeError(f"Unsupported type for save_output: {type(obj)}. Supported: DataFrame, Figure, plt module, dict, list, str, bytes, BytesIO/file-like objects")
     
     print(f"Saved output to: {path}")
+    return path
+
+def save_base64(base64_string, filename):
+    """
+    Save a base64-encoded string as a binary file.
+    Useful when LLMs generate base64-encoded binary data.
+    
+    Args:
+        base64_string: Base64-encoded string
+        filename: Output filename
+    
+    Returns:
+        str: Path to saved file
+    
+    Example:
+        import base64
+        pdf_bytes = generate_pdf()
+        b64_string = base64.b64encode(pdf_bytes).decode()
+        save_base64(b64_string, 'report.pdf')
+    """
+    import base64
+    import os
+    
+    path = os.path.join(OUTPUT_DIR, filename)
+    
+    # Decode base64
+    binary_data = base64.b64decode(base64_string)
+    
+    # Write to file
+    with open(path, 'wb') as f:
+        f.write(binary_data)
+    
+    print(f"Saved base64 output to: {path}")
     return path
 
 # ===== USER SCRIPT BEGINS =====

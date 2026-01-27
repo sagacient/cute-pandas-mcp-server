@@ -110,9 +110,12 @@ Execute arbitrary pandas/Python code with access to specified files.
 **Helper functions available in scripts:**
 - `resolve_path(original_path)` - Convert original file path to container path
 - `save_output(obj, filename, format=None)` - Save various objects to execution's `/output` directory
-  - Supports: pandas DataFrame (csv/json/parquet/xlsx), matplotlib figures or `plt` module (png/pdf/svg/jpg), dicts/lists (json), strings (txt), bytes (binary)
+  - Supports: pandas DataFrame (csv/json/parquet/xlsx), matplotlib figures or `plt` module (png/pdf/svg/jpg), **BytesIO/file-like objects** (pdf, images), dicts/lists (json), strings (txt), bytes (binary)
   - Format auto-detected from filename extension if not specified
   - Can accept either `fig` object or `plt` module directly (uses current figure)
+  - **Handles reportlab PDFs, PIL images, and other BytesIO objects**
+- `save_base64(base64_string, filename)` - Save base64-encoded data as a binary file
+  - Useful when LLMs generate base64-encoded binary output
 - `FILE_MAPPING` - Dictionary of original paths to container paths
 
 **Example usage:**
@@ -139,6 +142,26 @@ save_output(stats, 'statistics.json')
 
 # Save text reports
 save_output("Analysis complete", 'report.txt')
+
+# Save PDFs with reportlab (BytesIO)
+from io import BytesIO
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+
+buf = BytesIO()
+c = canvas.Canvas(buf, pagesize=letter)
+c.setFont('Helvetica-Bold', 16)
+c.drawString(72, 720, 'Analysis Report')
+c.setFont('Helvetica', 12)
+c.drawString(72, 680, 'This is a sample report')
+c.save()
+save_output(buf, 'report.pdf')  # BytesIO to PDF
+
+# Save base64-encoded data
+import base64
+binary_data = b'some binary content'
+b64_string = base64.b64encode(binary_data).decode()
+save_base64(b64_string, 'data.bin')  # Base64 to binary file
 ```
 
 **Response includes:**

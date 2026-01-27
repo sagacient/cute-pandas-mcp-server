@@ -72,7 +72,7 @@ func RunScriptTool() mcp.Tool {
 		mcp.WithDescription("Execute Python scripts for data analysis, transformation, and visualization. Generate charts, process datasets, and save outputs in multiple formats."),
 		mcp.WithString("script",
 			mcp.Required(),
-			mcp.Description("Python code to execute. Helper functions: resolve_path(path) to access mounted files, save_output(obj, filename) to save outputs including data tables (csv/json/xlsx), charts/visualizations (png/pdf/svg), or text/JSON data. Format is auto-detected from filename extension."),
+			mcp.Description("Python code to execute. Helper functions: resolve_path(path) to access mounted files, save_output(obj, filename) to save data tables (csv/json/xlsx), charts (png/pdf/svg), PDFs, BytesIO objects, or text/JSON. save_base64(base64_str, filename) to save base64-encoded data. Format is auto-detected from filename extension. Examples: save_output(df, 'data.csv'), save_output(plt, 'chart.png'), save_output(bytesio_obj, 'report.pdf')."),
 		),
 		mcp.WithArray("files",
 			mcp.Required(),
