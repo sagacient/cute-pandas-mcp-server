@@ -56,6 +56,7 @@ func main() {
 		cfg.TempDir,
 		cfg.OutputDir,
 		cfg.OutputTTL,
+		cfg.ChartThemeFile,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create Docker executor: %v", err)
@@ -172,6 +173,8 @@ func createMCPServer(cfg *config.Config, pool *workerpool.Pool, exec *executor.D
 	mcpServer.AddTool(tools.ReadDataFrameTool(), pandasTools.ReadDataFrameHandler)
 	mcpServer.AddTool(tools.AnalyzeDataTool(), pandasTools.AnalyzeDataHandler)
 	mcpServer.AddTool(tools.TransformDataTool(), pandasTools.TransformDataHandler)
+	mcpServer.AddTool(tools.QueryDataTool(), pandasTools.QueryDataHandler)
+	mcpServer.AddTool(tools.ProfileDataTool(), pandasTools.ProfileDataHandler)
 
 	// Output management tools
 	mcpServer.AddTool(tools.ListOutputsTool(), pandasTools.ListOutputsHandler)

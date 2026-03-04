@@ -36,8 +36,8 @@ const dockerfileName = "CutePandas.Dockerfile"
 func getDockerfileContent() ([]byte, error) {
 	// Locations to search for Dockerfile
 	searchPaths := []string{
-		dockerfileName,           // Current working directory
-		"./" + dockerfileName,    // Explicit current dir
+		dockerfileName,        // Current working directory
+		"./" + dockerfileName, // Explicit current dir
 	}
 
 	// Also try executable directory
@@ -61,14 +61,14 @@ func getDockerfileContent() ([]byte, error) {
 
 // ExecutionResult holds the result of a script execution.
 type ExecutionResult struct {
-	ExecutionID string        // Unique ID for this execution
+	ExecutionID string // Unique ID for this execution
 	Stdout      string
 	Stderr      string
 	ExitCode    int
 	Duration    time.Duration
 	Error       string
-	OutputFiles []string      // List of files saved to output dir
-	OutputPath  string        // Path to execution output directory
+	OutputFiles []string // List of files saved to output dir
+	OutputPath  string   // Path to execution output directory
 }
 
 // ErrImageNotReady is returned when the Docker image is still being built.
@@ -82,11 +82,12 @@ type DockerExecutor struct {
 	cpuLimit         float64
 	networkDisabled  bool
 	executionTimeout time.Duration
-	buildLocal       bool   // Force local build instead of pulling
-	tempDir          string // Temp directory for scripts (must be accessible to Docker daemon)
-	outputDir        string // Output directory for pandas script outputs (writable)
+	buildLocal       bool          // Force local build instead of pulling
+	tempDir          string        // Temp directory for scripts (must be accessible to Docker daemon)
+	outputDir        string        // Output directory for pandas script outputs (writable)
 	outputTTL        time.Duration // TTL for output cleanup
 	outputManager    *OutputManager
+	chartThemeFile   string // Optional Python file with matplotlib chart theme
 
 	// Image readiness tracking
 	imageReady    bool
@@ -181,7 +182,7 @@ func findDockerSocket() (*client.Client, string, error) {
 }
 
 // NewDockerExecutor creates a new Docker executor.
-func NewDockerExecutor(imageName string, memoryMB int64, cpuLimit float64, networkDisabled bool, timeout time.Duration, buildLocal bool, tempDir string, outputDir string, outputTTL time.Duration) (*DockerExecutor, error) {
+func NewDockerExecutor(imageName string, memoryMB int64, cpuLimit float64, networkDisabled bool, timeout time.Duration, buildLocal bool, tempDir string, outputDir string, outputTTL time.Duration, chartThemeFile string) (*DockerExecutor, error) {
 	cli, socketPath, err := findDockerSocket()
 	if err != nil {
 		return nil, fmt.Errorf("failed to find Docker: %w\n\nMake sure Docker, Colima, Lima, Podman, or Rancher Desktop is running.\nYou can also set DOCKER_HOST environment variable manually.", err)
@@ -207,6 +208,7 @@ func NewDockerExecutor(imageName string, memoryMB int64, cpuLimit float64, netwo
 		outputDir:        outputDir,
 		outputTTL:        outputTTL,
 		outputManager:    outputManager,
+		chartThemeFile:   chartThemeFile,
 	}, nil
 }
 
@@ -221,6 +223,24 @@ func (e *DockerExecutor) Close() error {
 // GetOutputManager returns the output manager for this executor.
 func (e *DockerExecutor) GetOutputManager() *OutputManager {
 	return e.outputManager
+}
+
+// ChartThemeFile returns the configured chart theme file path.
+func (e *DockerExecutor) ChartThemeFile() string {
+	return e.chartThemeFile
+}
+
+// ChartThemeCode reads and returns the chart theme file contents, or empty string if not configured.
+func (e *DockerExecutor) ChartThemeCode() string {
+	if e.chartThemeFile == "" {
+		return ""
+	}
+	data, err := os.ReadFile(e.chartThemeFile)
+	if err != nil {
+		log.Printf("Warning: could not read chart theme file %s: %v", e.chartThemeFile, err)
+		return ""
+	}
+	return string(data)
 }
 
 // StartOutputCleanup starts the output cleanup loop.
@@ -626,6 +646,21 @@ func (e *DockerExecutor) ExecuteScript(ctx context.Context, script string, files
 			Target:   "/output",
 			ReadOnly: false,
 		},
+	}
+
+	// Mount chart theme file if configured
+	if e.chartThemeFile != "" {
+		absThemePath, err := filepath.Abs(e.chartThemeFile)
+		if err == nil {
+			if _, err := os.Stat(absThemePath); err == nil {
+				mounts = append(mounts, mount.Mount{
+					Type:     mount.TypeBind,
+					Source:   absThemePath,
+					Target:   "/theme.py",
+					ReadOnly: true,
+				})
+			}
+		}
 	}
 
 	// Mount input files

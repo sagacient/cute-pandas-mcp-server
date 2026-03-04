@@ -12,7 +12,8 @@ import (
 )
 
 // WrapScript wraps user script with file path mappings and imports.
-func WrapScript(userScript string, fileMapping map[string]string) string {
+// If themeCode is non-empty, it is injected before the user script (e.g., matplotlib rcParams).
+func WrapScript(userScript string, fileMapping map[string]string, themeCode string) string {
 	var sb strings.Builder
 
 	// Write standard imports
@@ -22,6 +23,8 @@ import os
 import json
 import pandas as pd
 import numpy as np
+import duckdb
+import polars as pl
 
 # Suppress warnings for cleaner output
 import warnings
@@ -204,6 +207,13 @@ def save_base64(base64_string, filename):
 
 # ===== USER SCRIPT BEGINS =====
 `)
+
+	// Inject chart theme code if provided
+	if themeCode != "" {
+		sb.WriteString("# ===== CHART THEME =====\n")
+		sb.WriteString(themeCode)
+		sb.WriteString("\n# ===== END CHART THEME =====\n\n")
+	}
 
 	sb.WriteString(userScript)
 	sb.WriteString("\n# ===== USER SCRIPT ENDS =====\n")
@@ -647,4 +657,341 @@ func mapToJSON(m map[string]interface{}) string {
 	}
 	result += "}"
 	return result
+}
+
+// WrapDuckDBScript generates a Python script that executes a SQL query using DuckDB.
+// It auto-creates views for each mounted file and handles large result sets by
+// saving full results to output files while returning summaries to stdout.
+func WrapDuckDBScript(query string, fileMapping map[string]string, themeCode string) string {
+	var sb strings.Builder
+
+	sb.WriteString(`#!/usr/bin/env python3
+import sys
+import os
+import json
+import duckdb
+import pandas as pd
+import numpy as np
+
+# Suppress warnings for cleaner output
+import warnings
+warnings.filterwarnings('ignore')
+
+# File path mapping (original path -> container path)
+FILE_MAPPING = {
+`)
+
+	for original, container := range fileMapping {
+		sb.WriteString(fmt.Sprintf("    %q: %q,\n", original, container))
+	}
+	sb.WriteString("}\n\n")
+
+	sb.WriteString(`def resolve_path(path):
+    """Resolve original file path to container path."""
+    if path in FILE_MAPPING:
+        return FILE_MAPPING[path]
+    if path.startswith('/data/'):
+        return path
+    basename = os.path.basename(path)
+    for orig, container in FILE_MAPPING.items():
+        if os.path.basename(container) == basename:
+            return container
+    return path
+
+# Output directory for saving results
+OUTPUT_DIR = '/output'
+
+def save_output(obj, filename, format=None):
+    """Save output to file. Supports DataFrame, dict, list, str, bytes, BytesIO."""
+    path = os.path.join(OUTPUT_DIR, filename)
+    if format is None:
+        format = os.path.splitext(filename)[1].lstrip('.').lower()
+    if hasattr(obj, 'to_csv'):
+        if format in ['csv', 'txt']:
+            obj.to_csv(path, index=False)
+        elif format == 'json':
+            obj.to_json(path, orient='records', indent=2)
+        elif format in ['parquet', 'pq']:
+            obj.to_parquet(path, index=False)
+        elif format in ['xlsx', 'excel', 'xls']:
+            obj.to_excel(path, index=False, engine='openpyxl')
+        else:
+            obj.to_csv(path, index=False)
+    elif isinstance(obj, (dict, list)):
+        with open(path, 'w') as f:
+            json.dump(obj, f, indent=2, default=str)
+    elif isinstance(obj, str):
+        with open(path, 'w') as f:
+            f.write(obj)
+    elif isinstance(obj, bytes):
+        with open(path, 'wb') as f:
+            f.write(obj)
+    elif hasattr(obj, 'read'):
+        if hasattr(obj, 'seek'):
+            obj.seek(0)
+        content = obj.read()
+        mode = 'wb' if isinstance(content, bytes) else 'w'
+        with open(path, mode) as f:
+            f.write(content)
+    else:
+        raise TypeError(f"Unsupported type for save_output: {type(obj)}")
+    print(f"Saved output to: {path}")
+    return path
+
+# Initialize DuckDB connection
+con = duckdb.connect()
+
+# Auto-create views for each mounted file
+_view_names = {}
+for orig_path, container_path in FILE_MAPPING.items():
+    basename = os.path.splitext(os.path.basename(container_path))[0]
+    # Sanitize table name
+    table_name = basename.replace('-', '_').replace(' ', '_').replace('.', '_')
+    ext = os.path.splitext(container_path)[1].lower()
+    try:
+        if ext == '.csv':
+            con.execute(f"CREATE VIEW \"{table_name}\" AS SELECT * FROM read_csv('{container_path}', auto_detect=true)")
+        elif ext in ['.parquet', '.pq']:
+            con.execute(f"CREATE VIEW \"{table_name}\" AS SELECT * FROM read_parquet('{container_path}')")
+        elif ext == '.json':
+            con.execute(f"CREATE VIEW \"{table_name}\" AS SELECT * FROM read_json('{container_path}', auto_detect=true)")
+        elif ext in ['.xlsx', '.xls']:
+            _df = pd.read_excel(container_path)
+            con.register(table_name, _df)
+        _view_names[orig_path] = table_name
+    except Exception as e:
+        print(f"Warning: Could not create view for {basename}: {e}", file=sys.stderr)
+
+# Print available tables
+if _view_names:
+    print("Available tables:")
+    for orig, tname in _view_names.items():
+        print(f"  {tname} <- {os.path.basename(orig)}")
+    print()
+
+`)
+
+	// Inject chart theme code if provided
+	if themeCode != "" {
+		sb.WriteString("# ===== CHART THEME =====\n")
+		sb.WriteString(themeCode)
+		sb.WriteString("\n# ===== END CHART THEME =====\n\n")
+	}
+
+	sb.WriteString("# ===== QUERY EXECUTION =====\n")
+	sb.WriteString("try:\n")
+	sb.WriteString(fmt.Sprintf("    _result = con.sql(%q)\n", query))
+	sb.WriteString(`    _df = _result.df()
+
+    print(f"Query returned {len(_df)} rows x {len(_df.columns)} columns")
+    print()
+
+    if len(_df) <= 200:
+        # Small result: show everything
+        print(_df.to_string())
+    else:
+        # Large result: save full data, show summary
+        save_output(_df, 'query_result.csv')
+
+        print(f"First 10 rows:")
+        print(_df.head(10).to_string())
+        print()
+        print("Column statistics:")
+        print(_df.describe(include='all').to_string())
+        print()
+        print(f"Full result saved to: /output/query_result.csv ({len(_df)} rows)")
+
+except Exception as e:
+    print(f"Query error: {e}", file=sys.stderr)
+    sys.exit(1)
+`)
+
+	return sb.String()
+}
+
+// ProfileDataScript generates a Python script that produces a comprehensive
+// profile of a dataset using DuckDB for speed on large files.
+func ProfileDataScript(containerPath string) string {
+	return fmt.Sprintf(`#!/usr/bin/env python3
+import sys
+import os
+import json
+import duckdb
+import pandas as pd
+import numpy as np
+
+# Suppress warnings
+import warnings
+warnings.filterwarnings('ignore')
+
+FILE_PATH = %q
+
+# Detect file format and read with DuckDB
+ext = os.path.splitext(FILE_PATH)[1].lower()
+con = duckdb.connect()
+
+try:
+    if ext == '.csv':
+        con.execute(f"CREATE VIEW data AS SELECT * FROM read_csv('{FILE_PATH}', auto_detect=true)")
+    elif ext in ['.parquet', '.pq']:
+        con.execute(f"CREATE VIEW data AS SELECT * FROM read_parquet('{FILE_PATH}')")
+    elif ext == '.json':
+        con.execute(f"CREATE VIEW data AS SELECT * FROM read_json('{FILE_PATH}', auto_detect=true)")
+    elif ext in ['.xlsx', '.xls']:
+        _df = pd.read_excel(FILE_PATH)
+        con.register('data', _df)
+    else:
+        # Try CSV as fallback
+        con.execute(f"CREATE VIEW data AS SELECT * FROM read_csv('{FILE_PATH}', auto_detect=true)")
+except Exception as e:
+    print(f"Error reading file: {e}", file=sys.stderr)
+    sys.exit(1)
+
+# Get basic info
+row_count = con.execute("SELECT COUNT(*) FROM data").fetchone()[0]
+col_info = con.execute("DESCRIBE data").fetchdf()
+col_names = col_info['column_name'].tolist()
+col_types = col_info['column_type'].tolist()
+n_cols = len(col_names)
+
+# File size
+try:
+    file_size = os.path.getsize(FILE_PATH)
+    if file_size >= 1024 * 1024 * 1024:
+        size_str = f"{file_size / (1024**3):.2f} GB"
+    elif file_size >= 1024 * 1024:
+        size_str = f"{file_size / (1024**2):.2f} MB"
+    elif file_size >= 1024:
+        size_str = f"{file_size / 1024:.1f} KB"
+    else:
+        size_str = f"{file_size} bytes"
+except:
+    size_str = "unknown"
+
+print("=" * 60)
+print("DATASET PROFILE")
+print("=" * 60)
+print(f"File: {os.path.basename(FILE_PATH)}")
+print(f"Size: {size_str}")
+print(f"Rows: {row_count:,}")
+print(f"Columns: {n_cols}")
+print()
+
+# Per-column profiling
+print("-" * 60)
+print("COLUMN DETAILS")
+print("-" * 60)
+
+numeric_cols = []
+categorical_cols = []
+
+for col_name, col_type in zip(col_names, col_types):
+    col_type_str = str(col_type).upper()
+    print(f"\n  {col_name} ({col_type_str})")
+
+    # Null count
+    null_count = con.execute(f'SELECT COUNT(*) - COUNT("{col_name}") FROM data').fetchone()[0]
+    null_pct = (null_count / row_count * 100) if row_count > 0 else 0
+    print(f"    Nulls: {null_count:,} ({null_pct:.1f}%%)")
+
+    # Cardinality
+    distinct_count = con.execute(f'SELECT COUNT(DISTINCT "{col_name}") FROM data').fetchone()[0]
+    print(f"    Distinct: {distinct_count:,}")
+
+    is_numeric = any(t in col_type_str for t in ['INT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC', 'BIGINT', 'SMALLINT', 'TINYINT', 'HUGEINT', 'REAL'])
+
+    if is_numeric:
+        numeric_cols.append(col_name)
+        try:
+            stats = con.execute(f'''
+                SELECT
+                    MIN("{col_name}") as min_val,
+                    MAX("{col_name}") as max_val,
+                    AVG("{col_name}")::DOUBLE as mean_val,
+                    MEDIAN("{col_name}")::DOUBLE as median_val,
+                    STDDEV("{col_name}")::DOUBLE as std_val,
+                    QUANTILE_CONT("{col_name}", 0.25)::DOUBLE as q25,
+                    QUANTILE_CONT("{col_name}", 0.75)::DOUBLE as q75
+                FROM data
+            ''').fetchone()
+            print(f"    Min: {stats[0]}")
+            print(f"    Max: {stats[1]}")
+            print(f"    Mean: {stats[2]:.4f}" if stats[2] is not None else "    Mean: N/A")
+            print(f"    Median: {stats[3]:.4f}" if stats[3] is not None else "    Median: N/A")
+            print(f"    Std: {stats[4]:.4f}" if stats[4] is not None else "    Std: N/A")
+            print(f"    Q25: {stats[5]:.4f}" if stats[5] is not None else "    Q25: N/A")
+            print(f"    Q75: {stats[6]:.4f}" if stats[6] is not None else "    Q75: N/A")
+        except Exception as e:
+            print(f"    (stats error: {e})")
+    else:
+        categorical_cols.append(col_name)
+        # Top 5 values
+        try:
+            top_vals = con.execute(f'''
+                SELECT "{col_name}" as val, COUNT(*) as cnt
+                FROM data
+                WHERE "{col_name}" IS NOT NULL
+                GROUP BY "{col_name}"
+                ORDER BY cnt DESC
+                LIMIT 5
+            ''').fetchdf()
+            if len(top_vals) > 0:
+                print(f"    Top values:")
+                for _, row in top_vals.iterrows():
+                    pct = (row['cnt'] / row_count * 100)
+                    print(f"      {row['val']}: {row['cnt']:,} ({pct:.1f}%%)")
+        except Exception as e:
+            print(f"    (top values error: {e})")
+
+# Correlation matrix for numeric columns
+if len(numeric_cols) >= 2:
+    print()
+    print("-" * 60)
+    print("CORRELATIONS (numeric columns)")
+    print("-" * 60)
+    try:
+        cols_str = ", ".join([f'"{c}"' for c in numeric_cols[:20]])  # Limit to 20 cols
+        corr_df = con.execute(f"SELECT {cols_str} FROM data").fetchdf().corr()
+        print(corr_df.to_string())
+    except Exception as e:
+        print(f"  (correlation error: {e})")
+
+# Outlier detection (IQR method) for numeric columns
+if numeric_cols:
+    print()
+    print("-" * 60)
+    print("POTENTIAL OUTLIERS (IQR method)")
+    print("-" * 60)
+    for col_name in numeric_cols[:20]:  # Limit to 20 cols
+        try:
+            iqr_stats = con.execute(f'''
+                SELECT
+                    QUANTILE_CONT("{col_name}", 0.25)::DOUBLE as q1,
+                    QUANTILE_CONT("{col_name}", 0.75)::DOUBLE as q3
+                FROM data
+            ''').fetchone()
+            if iqr_stats[0] is not None and iqr_stats[1] is not None:
+                q1, q3 = iqr_stats
+                iqr = q3 - q1
+                lower = q1 - 1.5 * iqr
+                upper = q3 + 1.5 * iqr
+                outlier_count = con.execute(f'''
+                    SELECT COUNT(*) FROM data
+                    WHERE "{col_name}" < {lower} OR "{col_name}" > {upper}
+                ''').fetchone()[0]
+                if outlier_count > 0:
+                    pct = (outlier_count / row_count * 100)
+                    print(f"  {col_name}: {outlier_count:,} outliers ({pct:.1f}%%)")
+        except:
+            pass
+
+# Sample rows
+print()
+print("-" * 60)
+print("SAMPLE ROWS (first 5)")
+print("-" * 60)
+sample_df = con.execute("SELECT * FROM data LIMIT 5").fetchdf()
+print(sample_df.to_string())
+print()
+`, containerPath)
 }

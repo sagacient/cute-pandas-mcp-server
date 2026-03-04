@@ -50,6 +50,9 @@ type Config struct {
 
 	// Output TTL for automatic cleanup of execution outputs
 	OutputTTL time.Duration
+
+	// Chart theme file (optional Python file with matplotlib rcParams)
+	ChartThemeFile string
 }
 
 // DefaultConfig returns the default configuration.
@@ -76,6 +79,7 @@ func DefaultConfig() *Config {
 		TempDir:          defaultTempDir(),          // Temp dir accessible to Docker daemon
 		OutputDir:        defaultOutputDir(),        // Output dir for pandas scripts
 		OutputTTL:        24 * time.Hour,            // Auto-delete outputs after 24 hours
+		ChartThemeFile:   "",                         // No chart theme by default
 	}
 }
 
@@ -216,6 +220,10 @@ func LoadFromEnv() *Config {
 
 	if v := os.Getenv("OUTPUT_DIR"); v != "" {
 		cfg.OutputDir = v
+	}
+
+	if v := os.Getenv("CHART_THEME_FILE"); v != "" {
+		cfg.ChartThemeFile = v
 	}
 
 	return cfg

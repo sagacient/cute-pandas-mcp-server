@@ -69,7 +69,7 @@ func (t *PandasTools) resolveFilePaths(paths []string) ([]string, error) {
 // RunScriptTool returns the run_pandas_script tool definition.
 func RunScriptTool() mcp.Tool {
 	return mcp.NewTool("run_pandas_script",
-		mcp.WithDescription("Execute Python scripts for data analysis, transformation, and visualization. Generate charts, process datasets, and save outputs in multiple formats."),
+		mcp.WithDescription("Execute Python scripts for data analysis, transformation, and visualization. Available engines: duckdb (use duckdb.sql() for SQL queries, joins, aggregations on large data - data stays on disk), polars (import polars as pl for fast DataFrame ops), pandas (sklearn/matplotlib compatibility). Also available: matplotlib, seaborn, scipy, scikit-learn, statsmodels, xgboost, spacy, nltk, geopandas, reportlab, python-pptx, python-docx, Pillow, opencv, and more. For pure SQL queries prefer query_data tool. For dataset profiling prefer profile_data tool. Use save_output() to persist results."),
 		mcp.WithString("script",
 			mcp.Required(),
 			mcp.Description("Python code to execute. Helper functions: resolve_path(path) to access mounted files, save_output(obj, filename) to save data tables (csv/json/xlsx), charts (png/pdf/svg), PDFs, BytesIO objects, or text/JSON. save_base64(base64_str, filename) to save base64-encoded data. Format is auto-detected from filename extension. Examples: save_output(df, 'data.csv'), save_output(plt, 'chart.png'), save_output(bytesio_obj, 'report.pdf')."),
@@ -120,8 +120,8 @@ func (t *PandasTools) RunScriptHandler(ctx context.Context, request mcp.CallTool
 		fileMapping[originalPath] = containerPath
 	}
 
-	// Wrap the script with helpers
-	wrappedScript := executor.WrapScript(script, fileMapping)
+	// Wrap the script with helpers (includes chart theme if configured)
+	wrappedScript := executor.WrapScript(script, fileMapping, t.executor.ChartThemeCode())
 
 	// Execute with resolved paths
 	result, err := t.executor.ExecuteScript(ctx, wrappedScript, resolvedFiles, timeout)
@@ -137,7 +137,7 @@ func (t *PandasTools) RunScriptHandler(ctx context.Context, request mcp.CallTool
 // ReadDataFrameTool returns the read_dataframe tool definition.
 func ReadDataFrameTool() mcp.Tool {
 	return mcp.NewTool("read_dataframe",
-		mcp.WithDescription("Read a data file and return summary information including shape, columns, data types, memory usage, and a preview of the data."),
+		mcp.WithDescription("Read a data file and return summary information including shape, columns, data types, memory usage, and a preview of the data. For comprehensive profiling (statistics, correlations, outliers), use profile_data instead. For SQL queries, use query_data."),
 		mcp.WithString("file_path",
 			mcp.Required(),
 			mcp.Description("Path to the data file (CSV, Excel, JSON, or Parquet)"),
@@ -194,7 +194,7 @@ func (t *PandasTools) ReadDataFrameHandler(ctx context.Context, request mcp.Call
 // AnalyzeDataTool returns the analyze_data tool definition.
 func AnalyzeDataTool() mcp.Tool {
 	return mcp.NewTool("analyze_data",
-		mcp.WithDescription("Perform statistical analysis on a dataset. Supports describe, info, correlation, value counts, and groupby operations."),
+		mcp.WithDescription("Perform statistical analysis on a dataset. Supports describe, info, correlation, value counts, and groupby operations. For large datasets or SQL-style analysis, consider query_data. For full profiling, use profile_data."),
 		mcp.WithString("file_path",
 			mcp.Required(),
 			mcp.Description("Path to the data file"),
@@ -267,7 +267,7 @@ func (t *PandasTools) AnalyzeDataHandler(ctx context.Context, request mcp.CallTo
 // TransformDataTool returns the transform_data tool definition.
 func TransformDataTool() mcp.Tool {
 	return mcp.NewTool("transform_data",
-		mcp.WithDescription("Apply transformations to a dataset and return the result. Supports filter, select, drop, sort, rename, dropna, fillna, and more operations."),
+		mcp.WithDescription("Apply declarative transformations to a dataset and return the result. Supports filter, select, drop, sort, rename, dropna, fillna, and more operations. For SQL-style transforms or large datasets, consider query_data or run_pandas_script with duckdb/polars."),
 		mcp.WithString("input_file",
 			mcp.Required(),
 			mcp.Description("Path to the input data file"),
@@ -441,6 +441,122 @@ func getBaseName(path string) string {
 	return path
 }
 
+// QueryDataTool returns the query_data tool definition.
+func QueryDataTool() mcp.Tool {
+	return mcp.NewTool("query_data",
+		mcp.WithDescription("Execute SQL queries against data files using DuckDB. Best for: joins across multiple files, aggregations (GROUP BY/SUM/AVG/COUNT), window functions, filtering large datasets (millions of rows). Each mounted file is auto-registered as a table named after the file (e.g., 'sales.csv' becomes table 'sales'). Small results returned in full; large results (>200 rows) are auto-saved to output files with summary shown. For visualization or ML, use run_pandas_script instead."),
+		mcp.WithString("query",
+			mcp.Required(),
+			mcp.Description("SQL query to execute. Use table names derived from filenames (e.g., 'sales' for sales.csv). Supports full DuckDB SQL syntax including CTEs, window functions, QUALIFY, etc."),
+		),
+		mcp.WithArray("files",
+			mcp.Required(),
+			mcp.Description("List of file paths to mount as tables (read-only). Supports CSV, Parquet, JSON, Excel files."),
+			mcp.Items(map[string]interface{}{"type": "string"}),
+		),
+		mcp.WithNumber("timeout",
+			mcp.Description("Maximum execution time in seconds (default: 60)"),
+		),
+	)
+}
+
+// QueryDataHandler handles the query_data tool.
+func (t *PandasTools) QueryDataHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Try to acquire a worker slot
+	if err := t.pool.Acquire(ctx); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	defer t.pool.Release()
+
+	// Extract arguments
+	query, err := request.RequireString("query")
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid parameter 'query': %v", err)), nil
+	}
+
+	filesArg := request.GetArguments()["files"]
+	files, err := toStringSlice(filesArg)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid parameter 'files': %v", err)), nil
+	}
+
+	// Resolve upload:// URIs to actual paths
+	resolvedFiles, err := t.resolveFilePaths(files)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	timeout := time.Duration(request.GetFloat("timeout", 60)) * time.Second
+
+	// Build file mapping using original paths as keys
+	fileMapping := make(map[string]string)
+	for i, originalPath := range files {
+		containerPath := fmt.Sprintf("/data/input_%d/%s", i, getBaseName(resolvedFiles[i]))
+		fileMapping[originalPath] = containerPath
+	}
+
+	// Generate DuckDB script
+	wrappedScript := executor.WrapDuckDBScript(query, fileMapping, t.executor.ChartThemeCode())
+
+	// Execute with resolved paths
+	result, err := t.executor.ExecuteScript(ctx, wrappedScript, resolvedFiles, timeout)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("execution error: %v", err)), nil
+	}
+
+	output := formatExecutionResult(result)
+	return mcp.NewToolResultText(output), nil
+}
+
+// ProfileDataTool returns the profile_data tool definition.
+func ProfileDataTool() mcp.Tool {
+	return mcp.NewTool("profile_data",
+		mcp.WithDescription("Generate a comprehensive profile of a dataset in one call. Returns: shape, file size, column types, null rates, cardinality, numeric statistics (min/max/mean/median/std/quartiles), top values for categorical columns, correlations, outlier counts, and sample rows. Uses DuckDB internally - fast even on very large files (millions of rows). Use this to understand a dataset before writing queries or scripts."),
+		mcp.WithString("file_path",
+			mcp.Required(),
+			mcp.Description("Path to the data file to profile (CSV, Parquet, JSON, or Excel)"),
+		),
+	)
+}
+
+// ProfileDataHandler handles the profile_data tool.
+func (t *PandasTools) ProfileDataHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Try to acquire a worker slot
+	if err := t.pool.Acquire(ctx); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	defer t.pool.Release()
+
+	// Extract arguments
+	filePath, err := request.RequireString("file_path")
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid parameter 'file_path': %v", err)), nil
+	}
+
+	// Resolve upload:// URI if needed
+	resolvedPath, err := t.resolveFilePath(filePath)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Build file mapping
+	files := []string{resolvedPath}
+	fileMapping := executor.BuildFileMapping(files)
+	containerPath := fileMapping[resolvedPath]
+
+	// Generate profiling script
+	script := executor.ProfileDataScript(containerPath)
+
+	// Execute
+	result, err := t.executor.ExecuteScript(ctx, script, files, 0)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("execution error: %v", err)), nil
+	}
+
+	output := formatExecutionResult(result)
+	return mcp.NewToolResultText(output), nil
+}
+
 // ListOutputsTool returns the list_outputs tool definition.
 func ListOutputsTool() mcp.Tool {
 	return mcp.NewTool("list_outputs",
@@ -524,7 +640,7 @@ func (t *PandasTools) GetOutputHandler(ctx context.Context, request mcp.CallTool
 	}
 
 	// For binary files, return base64 encoded or just metadata
-	return mcp.NewToolResultText(fmt.Sprintf("Binary file: %s (%d bytes)\nExecution: %s\nFilename: %s", 
+	return mcp.NewToolResultText(fmt.Sprintf("Binary file: %s (%d bytes)\nExecution: %s\nFilename: %s",
 		filename, len(data), execID, filename)), nil
 }
 
